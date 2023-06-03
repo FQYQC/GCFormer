@@ -3,19 +3,19 @@ import os
 import json
 from torch.utils.data import Dataset
 import librosa
-import numpy as np
 import math
 
 class GCDataset(Dataset):
-    def __init__(self, path, maxlen=128):
+    def __init__(self, path, maxlen=128, diff = False):
         self.path = path
         self.data = []
         self.maxlen = maxlen
+        self.diff = diff
         for file in os.listdir(path):
             filename = os.path.join(path, file)
             if filename.endswith(".json"):
-                note, time = self.getfile(filename)
-                self.data.append((note, time))
+                d = self.getfile(filename)
+                self.data.append(d)
 
 
     def getfile(self, filename):
@@ -34,9 +34,7 @@ class GCDataset(Dataset):
                     t = math.floor(t+0.5)+3
                     if t<1 or t>9:
                         print(notedata)
-                        raise(
-                            OverflowError
-                        )
+                        raise(OverflowError)
                     if notedata["note"] == "#":
                         n = 1 # rest
                     else:
@@ -50,9 +48,25 @@ class GCDataset(Dataset):
             except KeyError:
                 break
         assert len(note) == len(time)
+
+        if self.diff:
+            diffnote = []
+            ref = note[0]
+            for i in range(len(note)):
+                if note[i] == 1:
+                    diffnote.append(1)
+                else:
+                    if ref == 1:
+                        ref = note[i]
+                    diffnote.append(note[i]-ref+64)
+       
+        mask = [True]*len(note) + [False]*(self.maxlen-len(note))
         note.extend([0]*(self.maxlen-len(note)))
         time.extend([0]*(self.maxlen-len(time)))
-        return torch.tensor(note), torch.tensor(time)
+        if self.diff:
+            diffnote.extend([0]*(self.maxlen-len(diffnote)))
+            return torch.tensor(note), torch.tensor(time), torch.tensor(mask), torch.tensor(diffnote)
+        return torch.tensor(note), torch.tensor(time), torch.tensor(mask)
     
     def __getitem__(self, index):
         return self.data[index]
@@ -62,7 +76,7 @@ class GCDataset(Dataset):
     
 
 if __name__ == "__main__":
-    dataset = GCDataset("Archive/train")
+    dataset = GCDataset("Archive/train", 512, diff=True)
     print(dataset[0])
     print(len(dataset))
 
